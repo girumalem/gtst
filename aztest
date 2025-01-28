@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# Set the source and destination directories
+source_dir="/backupnetapp2/rmanbackups"
+dest_dir="https://gtst/oracleda/27jan2025?sp=rcwdl&st=2025-01-28T15:48:05Z&se=2025-01-31T15:48:00Z&spr=https&sv=2022-11-02&sig=VFC%2B3S52M1AWN%2FVrIxCD71vlqjZi02MjnmphwO%2Fo2JI%3D&sr=s"
+
+# Create a log file to keep track of copied files
+log_file="/u99/tools/scripts/logs/.copied_files.log"
+
+# Create the log file if it doesn't exist
+touch "$log_file"
+
+# Find all files starting with "thread" in the source directory
+files=$(find "$source_dir" -name "thread*")
+
+# Iterate over the files using a for loop
+for file in $files; do
+
+  # Extract the filename from the full path
+  filename=$(basename "$file")
+
+  # Check if the file has already been copied
+  if grep -q "$filename" "$log_file"; then
+    echo "Skipping $file (already copied)"
+  else
+    # Copy the file to the destination directory using azcopy (with full path)
+    /usr/gtst/azcopy/azcopy copy "$file" "$dest_dir" --log-level=INFO --output-type=text
+    if [ $? -eq 0 ]; then
+      echo "Copied $file"
+      # Add the filename to the log file
+      echo "$filename" >> "$log_file"
+    else
+      echo "Failed to copy $file"
+    fi
+  fi
+done
