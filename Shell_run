@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# Replace with your actual username, hostname, and password file
+username="your_username"
+hostname="your_remote_host"
+password_file="/u95/password.hidden"
+
+# Read the password from the hidden file
+password=$(cat "$password_file")
+
+# Use sshpass to connect and run the script
+sshpass -p "$password" ssh "$username@$hostname" "/u95/tst.sh"
