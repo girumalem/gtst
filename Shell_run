@@ -1,3 +1,27 @@
+#!/usr/bin/expect
+
+# Replace with your actual username, hostname, and password
+set username "your_username"
+set hostname "your_remote_host"
+set password "your_password"
+
+spawn ssh "$username@$hostname" "/u95/tst.sh; exit"  # Added 'exit' here
+
+expect "password:"
+send "$password\r"
+
+expect eof
+
+
+
+
+
+
+
+
+
+
+
 #!/bin/bash
 
 # Replace with your actual username, hostname, and password file
