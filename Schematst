@@ -7,22 +7,29 @@ BEGIN
   -- Create the directory object outside the loop (without EXECUTE IMMEDIATE)
   CREATE OR REPLACE DIRECTORY export_dir AS '/path/to/your/export/directory';
 
-  FOR rec IN (SELECT table_name FROM user_tables WHERE table_name IN ('EMPLOYEES', 'JOBS', 'DEPARTMENTS', 'JOB_HISTORY', 'LOCATIONS', 'COUNTRIES', 'REGIONS')) LOOP 
+  FOR rec IN (SELECT table_name FROM user_tables WHERE table_name IN ('EMPLOYEES', 'JOBS', 'DEPARTMENTS', 'JOB_HISTORY', 'LOCATIONS', 'COUNTRIES', 'REGIONS')) LOOP
     v_table_name:= rec.table_name;
     v_column_list:= '';
 
-    -- Dynamically build the column list with appropriate data types
-    FOR col_rec IN (SELECT column_name, data_type 
-                    FROM user_tab_columns 
+    -- Dynamically build the column list with appropriate data types and formatting
+    FOR col_rec IN (SELECT column_name, data_type
+                    FROM user_tab_columns
                     WHERE table_name = v_table_name) LOOP
-      v_column_list:= v_column_list || col_rec.column_name || ' ' || col_rec.data_type || ',';
+      CASE col_rec.data_type
+        WHEN 'DATE' THEN
+          v_column_list:= v_column_list || col_rec.column_name || ' DATE ''YYYY-MM-DD'','; -- Format DATE columns
+        WHEN 'TIMESTAMP' THEN
+          v_column_list:= v_column_list || col_rec.column_name || ' TIMESTAMP ''YYYY-MM-DD HH24:MI:SS.FF'','; -- Format TIMESTAMP columns
+        ELSE
+          v_column_list:= v_column_list || col_rec.column_name || ' ' || col_rec.data_type || ','; -- Other data types
+      END CASE;
     END LOOP;
 
     -- Remove the trailing comma
     v_column_list:= RTRIM(v_column_list, ',');
 
-    -- Construct the external table DDL 
-    v_external_table_ddl:= 'CREATE OR REPLACE EXTERNAL TABLE ext_' || v_table_name || ' ( ' 
+    -- Construct the external table DDL
+    v_external_table_ddl:= 'CREATE OR REPLACE EXTERNAL TABLE ext_' || v_table_name || ' ( '
                            || v_column_list || ' ) '
                            || 'TYPE ORACLE_LOADER '
                            || 'DEFAULT DIRECTORY export_dir '
