@@ -1,12 +1,11 @@
-
 DECLARE
   v_table_name VARCHAR2(30);
   v_column_list VARCHAR2(4000);
   v_external_table_ddl VARCHAR2(4000);
   v_export_stmt VARCHAR2(4000);
 BEGIN
-  -- Create the directory object outside the loop
-  EXECUTE IMMEDIATE 'CREATE OR REPLACE DIRECTORY export_dir AS ''/path/to/your/export/directory''';
+  -- Create the directory object outside the loop (without EXECUTE IMMEDIATE)
+  CREATE OR REPLACE DIRECTORY export_dir AS '/path/to/your/export/directory';
 
   FOR rec IN (SELECT table_name FROM user_tables WHERE table_name IN ('EMPLOYEES', 'JOBS', 'DEPARTMENTS', 'JOB_HISTORY', 'LOCATIONS', 'COUNTRIES', 'REGIONS')) LOOP 
     v_table_name:= rec.table_name;
