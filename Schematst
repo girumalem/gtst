@@ -22,7 +22,7 @@ BEGIN
 
     BEGIN
       -- Dynamically build the column list with appropriate data types and formatting
-      FOR col_rec IN (SELECT column_name, data_type
+      FOR col_rec IN (SELECT column_name, data_type, data_length
                       FROM dba_tab_columns
                       WHERE table_name = v_table_name
                         AND owner = 'HR') LOOP
@@ -31,6 +31,8 @@ BEGIN
             v_column_list:= v_column_list || col_rec.column_name || ' DATE ''YYYY-MM-DD'',';
           WHEN 'TIMESTAMP' THEN
             v_column_list:= v_column_list || col_rec.column_name || ' TIMESTAMP ''YYYY-MM-DD HH24:MI:SS.FF'',';
+          WHEN 'VARCHAR2' THEN  -- Add this case for VARCHAR2
+            v_column_list:= v_column_list || col_rec.column_name || ' VARCHAR2(' || col_rec.data_length || '),';
           ELSE
             v_column_list:= v_column_list || col_rec.column_name || ' ' || col_rec.data_type || ',';
         END CASE;
