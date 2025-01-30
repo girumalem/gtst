@@ -1,0 +1,78 @@
+DECLARE
+  v_table_name VARCHAR2(30);
+  v_csv_file UTL_FILE.file_type;
+  v_csv_line VARCHAR2(4000);
+  v_directory VARCHAR2(100):= 'EXPORT_DIR'; -- Directory object name
+  v_sql_stmt VARCHAR2(4000);
+  v_cursor_id INTEGER;
+  v_col_cnt INTEGER;
+  v_desc_tab DBMS_SQL.DESC_TAB;
+  v_column_value VARCHAR2(4000);
+BEGIN
+  -- Loop through tables in the HR schema
+  FOR rec IN (SELECT table_name FROM all_tables WHERE owner = 'HR') LOOP
+    v_table_name:= rec.table_name;
+    DBMS_OUTPUT.PUT_LINE('Processing table: ' || v_table_name);
+
+    BEGIN
+      -- Open the CSV file for writing
+      v_csv_file:= UTL_FILE.FOPEN(v_directory, v_table_name || '.csv', 'w', 32767);
+
+      -- Write the column headers to the CSV file
+      v_csv_line:= '';
+      FOR col_rec IN (SELECT column_name
+                      FROM all_tab_columns
+                      WHERE table_name = v_table_name
+                        AND owner = 'HR'
+                      ORDER BY column_id) LOOP
+        v_csv_line:= v_csv_line || col_rec.column_name || ',';
+      END LOOP;
+      v_csv_line:= RTRIM(v_csv_line, ',');
+      UTL_FILE.PUT_LINE(v_csv_file, v_csv_line);
+
+      -- Construct the SQL query to fetch data from the table
+      v_sql_stmt:= 'SELECT * FROM HR.' || v_table_name;
+
+      -- Open the cursor using DBMS_SQL
+      v_cursor_id:= DBMS_SQL.OPEN_CURSOR;
+      DBMS_SQL.PARSE(v_cursor_id, v_sql_stmt, DBMS_SQL.NATIVE);
+      DBMS_SQL.DESCRIBE_COLUMNS(v_cursor_id, v_col_cnt, v_desc_tab);
+
+      -- Define columns for fetching (using a loop)
+      FOR i IN 1.. v_col_cnt LOOP
+        DBMS_SQL.DEFINE_COLUMN(v_cursor_id, i, v_column_value, 4000);
+      END LOOP;
+
+      -- Execute the query
+      IF DBMS_SQL.EXECUTE_AND_FETCH(v_cursor_id) > 0 THEN
+        LOOP
+          v_csv_line:= '';
+          FOR i IN 1.. v_col_cnt LOOP
+            DBMS_SQL.COLUMN_VALUE(v_cursor_id, i, v_column_value);
+            v_csv_line:= v_csv_line || '"' || REPLACE(v_column_value, '"', '""') || '",';
+          END LOOP;
+          v_csv_line:= RTRIM(v_csv_line, ',');
+          UTL_FILE.PUT_LINE(v_csv_file, v_csv_line);
+          EXIT WHEN DBMS_SQL.FETCH_ROWS(v_cursor_id) = 0;
+        END LOOP;
+      END IF;
+
+      -- Close the cursor
+      DBMS_SQL.CLOSE_CURSOR(v_cursor_id);
+
+      -- Close the CSV file
+      UTL_FILE.FCLOSE(v_csv_file);
+      DBMS_OUTPUT.PUT_LINE('Exported table ' || v_table_name || ' to ' || v_table_name || '.csv');
+    EXCEPTION
+      WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Error processing table ' || v_table_name || ': ' || SQLERRM);
+        IF UTL_FILE.IS_OPEN(v_csv_file) THEN
+          UTL_FILE.FCLOSE(v_csv_file);
+        END IF;
+        IF DBMS_SQL.IS_OPEN(v_cursor_id) THEN
+          DBMS_SQL.CLOSE_CURSOR(v_cursor_id);
+        END IF;
+    END;
+  END LOOP;
+END;
+/
