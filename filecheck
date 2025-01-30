@@ -15,15 +15,21 @@ if [ -f "$FILE_TO_CHECK" ]; then
   MESSAGE="File '$FILE_TO_CHECK' found."
   echo "$MESSAGE" | mailx -s "$SUBJECT" "$RECIPIENT"
 
-  # Exit with success (0)
+  # Exit with success (0) - ONLY when the file exists.
   exit 0
 else
-  # File does not exist, create the file
+  # File does not exist, create the file and continue.
   if touch "$FILE_TO_CHECK"; then
     echo "File '$FILE_TO_CHECK' created successfully."
-    exit 0 # Exit 0 on successful file creation.
   else
     echo "Error: Could not create file '$FILE_TO_CHECK'."
     exit 1 # Exit with error code 1 if file creation fails.
   fi
+  # DO NOT exit here.  Continue with the rest of your script.
 fi
+
+# Continue with the rest of your script here...
+echo "Continuing with other operations..."
+# ... your other code ...
+
+exit 0 # Exit at the end of the script (if you want to)
