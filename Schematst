@@ -1,0 +1,46 @@
+DECLARE
+  v_table_name VARCHAR2(30);
+  v_column_list VARCHAR2(4000);
+  v_external_table_ddl VARCHAR2(4000);
+  v_export_stmt VARCHAR2(4000);
+BEGIN
+  FOR rec IN (SELECT table_name FROM user_tables WHERE table_name IN ('EMPLOYEES', 'JOBS', 'DEPARTMENTS', 'JOB_HISTORY', 'LOCATIONS', 'COUNTRIES', 'REGIONS')) LOOP 
+    v_table_name:= rec.table_name;
+    v_column_list:= '';
+
+    -- Dynamically build the column list with appropriate data types
+    FOR col_rec IN (SELECT column_name, data_type 
+                    FROM user_tab_columns 
+                    WHERE table_name = v_table_name) LOOP
+      v_column_list:= v_column_list || col_rec.column_name || ' ' || col_rec.data_type || ',';
+    END LOOP;
+
+    -- Remove the trailing comma
+    v_column_list:= RTRIM(v_column_list, ',');
+
+    -- Construct the external table DDL
+    v_external_table_ddl:= 'CREATE OR REPLACE DIRECTORY export_dir AS ''/path/to/your/export/directory''';
+    DBMS_OUTPUT.PUT_LINE (v_external_table_ddl);
+
+    v_external_table_ddl:= 'CREATE OR REPLACE EXTERNAL TABLE ext_' || v_table_name || ' ( ' 
+                           || v_column_list || ' ) '
+                           || 'TYPE ORACLE_LOADER '
+                           || 'DEFAULT DIRECTORY export_dir '
+                           || 'ACCESS PARAMETERS ( '
+                           || 'RECORDS DELIMITED BY NEWLINE '
+                           || 'FIELDS TERMINATED BY '','' '
+                           || 'MISSING FIELD VALUES ARE NULL '
+                           || ') '
+                           || 'LOCATION (''' || v_table_name || '.csv'')';
+
+    -- Construct the export statement
+    v_export_stmt:= 'INSERT INTO ext_' || v_table_name || ' SELECT * FROM ' || v_table_name;
+
+    -- Execute the DDL and export statement
+    EXECUTE IMMEDIATE v_external_table_ddl;
+    EXECUTE IMMEDIATE v_export_stmt;
+
+    DBMS_OUTPUT.PUT_LINE('Exported table ' || v_table_name || ' to ' || v_table_name || '.csv');
+  END LOOP;
+END;
+/
