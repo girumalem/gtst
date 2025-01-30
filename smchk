@@ -1,0 +1,17 @@
+ORACLE_SID=${ORACLE_SID:-} # Ensure ORACLE_SID is set, handle unset case
+
+if [[ -z "$ORACLE_SID" ]]; then
+  echo "ORACLE_SID is not set. Exiting." >> /path/to/your/logfile.log  # Replace with actual log file path
+  exit 1
+fi
+
+smon_pid=$(ps -ef | grep smon | grep "$ORACLE_SID" | awk '{print $8}')
+
+if [[ -z "$smon_pid" ]]; then
+  echo "Exiting: Program $ORACLE_SID is not running." >> /path/to/your/logfile.log # Replace with actual log file path
+  exit 1
+else
+  echo "Program $ORACLE_SID is running (SMON PID: $smon_pid). Continuing..." >> /path/to/your/logfile.log # Optional: Log the SMON PID
+  # Continue with the next steps of your script here
+  # ... your code ...
+fi
