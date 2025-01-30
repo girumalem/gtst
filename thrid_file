@@ -1,0 +1,78 @@
+DECLARE
+  v_table_name VARCHAR2(30);
+  v_column_list VARCHAR2(4000);
+  v_external_table_ddl VARCHAR2(4000);
+  v_export_stmt VARCHAR2(4000);
+BEGIN
+  -- Enable debugging
+  DBMS_DEBUG.DEBUG_ON;
+
+  -- Loop through tables in the HR schema
+  FOR rec IN (SELECT table_name FROM dba_tables WHERE owner = 'HR') LOOP
+    v_table_name:= rec.table_name;
+    v_column_list:= '';
+
+    -- Log the table being processed
+    DBMS_OUTPUT.PUT_LINE('Processing table: ' || v_table_name);
+
+    BEGIN
+      -- Dynamically build the column list with appropriate data types and formatting
+      FOR col_rec IN (SELECT column_name, data_type, data_length
+                      FROM dba_tab_columns
+                      WHERE table_name = v_table_name
+                        AND owner = 'HR') LOOP
+        CASE col_rec.data_type
+          WHEN 'DATE' THEN
+            v_column_list:= v_column_list || col_rec.column_name || ' DATE ''YYYY-MM-DD'',';
+          WHEN 'TIMESTAMP' THEN
+            v_column_list:= v_column_list || col_rec.column_name || ' TIMESTAMP ''YYYY-MM-DD HH24:MI:SS.FF'',';
+          WHEN 'VARCHAR2' THEN
+            v_column_list:= v_column_list || col_rec.column_name || ' VARCHAR2(' || col_rec.data_length || '),';
+          WHEN 'CHAR' THEN
+            v_column_list:= v_column_list || col_rec.column_name || ' CHAR(' || col_rec.data_length || '),';
+          ELSE
+            v_column_list:= v_column_list || col_rec.column_name || ' ' || col_rec.data_type || ',';
+        END CASE;
+      END LOOP;
+
+      -- Remove the trailing comma
+      v_column_list:= RTRIM(v_column_list, ',');
+
+      -- Log the generated column list
+      DBMS_OUTPUT.PUT_LINE('Column list: ' || v_column_list);
+
+      -- Construct the external table DDL in the HR schema
+      v_external_table_ddl:= 'CREATE TABLE HR.ext_' || v_table_name || ' ( '
+                             || v_column_list || ' ) '
+                             || 'ORGANIZATION EXTERNAL '
+                             || '( '
+                             || 'TYPE ORACLE_LOADER '
+                             || 'DEFAULT DIRECTORY HR.export_dir '
+                             || 'ACCESS PARAMETERS ( '
+                             || 'RECORDS DELIMITED BY NEWLINE '
+                             || 'FIELDS TERMINATED BY '','' '
+                             || 'MISSING FIELD VALUES ARE NULL '
+                             || ') '
+                             || 'LOCATION (''' || v_table_name || '.csv'') '
+                             || ')';
+
+      -- Log the generated DDL statement
+      DBMS_OUTPUT.PUT_LINE('External table DDL: ' || v_external_table_ddl);
+
+      -- Construct the export statement
+      v_export_stmt:= 'INSERT INTO HR.ext_' || v_table_name || ' SELECT * FROM HR.' || v_table_name;
+
+      -- Execute the DDL and export statement
+      EXECUTE IMMEDIATE v_external_table_ddl;
+      EXECUTE IMMEDIATE v_export_stmt;
+      DBMS_OUTPUT.PUT_LINE('Exported table ' || v_table_name || ' to ' || v_table_name || '.csv');
+    EXCEPTION
+      WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Error processing table ' || v_table_name || ': ' || SQLERRM);
+    END;
+  END LOOP;
+
+  -- Disable debugging
+  DBMS_DEBUG.DEBUG_OFF;
+END;
+/
