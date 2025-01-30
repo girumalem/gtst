@@ -84,4 +84,9 @@ BEGIN
           CLOSE v_cursor;
         END IF;
     END;
-  END LOOP
+  END LOOP;
+
+  -- Disable debugging
+  DBMS_DEBUG.DEBUG_OFF;
+END;
+/
