@@ -1,3 +1,8 @@
+SELECT * FROM v$version;
+SELECT value FROM nls_database_parameters WHERE parameter = 'NLS_CHARACTERSET';
+SELECT value FROM nls_database_parameters WHERE parameter = 'NLS_NCHAR_CHARACTERSET';
+ECHO $NLS_LANG  -- For Linux/Unix
+
 DECLARE
   v_table_name VARCHAR2(30);
   v_column_list VARCHAR2(4000);
