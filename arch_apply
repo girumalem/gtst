@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# ... (Your existing script to apply archivelogs) ...
+
+# Capture the output of the log file
+log_output=$(cat log_file)
+
+# Extract the first and last archived log file names
+first_log=$(echo "$log_output" | grep "archived log file name" | awk '{print $6}' | sed -n '1p')
+last_log=$(echo "$log_output" | grep "archived log file name" | awk '{print $6}' | sed -n '$p')
+
+# Construct the email body
+email_body="Archivelog application completed successfully.
+
+First log applied: $first_log
+Last log applied: $last_log
+
+Full log output:
+$log_output"
+
+# Construct the email subject
+email_subject="Archivelog Application Successful"
+
+# Send the email using sendmail
+sendmail -t << EOF
+To: your_email@example.com  # Replace with your email address
+From: your_server@example.com # Replace with your server's email address
+Subject: $email_subject
+
+$email_body
+EOF
+
+# Check the exit status of sendmail
+if [ $? -eq 0 ]; then
+  echo "Email sent successfully."
+else
+  echo "Error sending email."
+fi
