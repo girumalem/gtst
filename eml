@@ -1,0 +1,16 @@
+
+
+Hi Keerti,  
+
+Could you please open a ticket and start working with DevOps to make the necessary updates to our current PEM VM in preparation for deploying Oracle Enterprise Manager? This initiative will help us consolidate monitoring across all PIC Oracle VMs (both prod and non-prod), reducing the VM footprint, optimizing costs, and improving vulnerability management.  
+
+Here are the required changes for DevOps:  
+1. Increase the VM size to the next level up.  
+2. Add the following mount points:  
+   - `/u02` – 200 GB  
+   - `/oradata` – 250 GB  
+   - `/u99` – 100 GB (if it doesn't exist)  
+3. Open ports 1521 and 21 to the PIC Oracle VM subnet in both directions.  
+
+Once these changes are completed, we will proceed with deploying Oracle Enterprise Manager. Let me know if you need any additional details.  
+
