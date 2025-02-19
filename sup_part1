@@ -1,0 +1,89 @@
+DO $$
+DECLARE
+    v_p_init_date     date := '2024-12-01 13:59:25'::date;
+    v_p_final_date    date := '2025-01-01'::date;
+    v_p_start_date    date;
+    v_p_end_date      date;
+    v_schema          text;
+    v_table           text;
+    v_tab_part        text;
+    v_tab_subpart     text;
+    table_rec         record;
+    v_tid             text;
+    v_tenant          text;
+    v_tarray          text[] := array['1','2','24','3','4','8'];
+BEGIN
+    select date_trunc('month', v_p_init_date) into v_p_start_date;
+    select date_trunc('month', v_p_final_date) into v_p_end_date;
+
+    FOR table_rec IN 
+        SELECT table_schema, table_name 
+        FROM information_schema.tables 
+        WHERE table_name = 'your_partitioned_table' 
+    LOOP
+        v_schema := table_rec.table_schema;
+        v_table := table_rec.table_name;
+
+        -- Create default partition for dates lower than v_p_init_date
+        EXECUTE format(
+            'CREATE TABLE IF NOT EXISTS %I.%I_p0 
+             PARTITION OF %I.%I 
+             FOR VALUES FROM (MINVALUE) TO (%L) 
+             PARTITION BY LIST (tenant_id);',
+            v_schema, v_table, v_schema, v_table, v_p_init_date
+        );
+
+        -- Create partitions for each tenant before subpartitions
+        FOREACH v_tenant IN ARRAY v_tarray LOOP
+            v_tab_part := format('%I_%s', v_table, v_tenant);
+            
+            EXECUTE format(
+                'CREATE TABLE IF NOT EXISTS %I.%I 
+                 PARTITION OF %I.%I 
+                 FOR VALUES IN (%L) 
+                 PARTITION BY LIST (tenant_id);',
+                v_schema, v_tab_part, v_schema, v_table, v_tenant
+            );
+        END LOOP;
+
+        -- Create subpartitions for the default partition (_p0)
+        FOREACH v_tenant IN ARRAY v_tarray LOOP
+            v_tab_part := format('%I_p0', v_table);
+            v_tab_subpart := format('%I_p0_%s_sub', v_table, v_tenant);
+            
+            EXECUTE format(
+                'CREATE TABLE IF NOT EXISTS %I.%I 
+                 PARTITION OF %I.%I 
+                 FOR VALUES IN (%L);',
+                v_schema, v_tab_subpart, v_schema, v_tab_part, v_tenant
+            );
+        END LOOP;
+
+        -- Create a default subpartition under the default partition (_p0)
+        EXECUTE format(
+            'CREATE TABLE IF NOT EXISTS %I.%I_p0_default 
+             PARTITION OF %I.%I_p0 DEFAULT;',
+            v_schema, v_table, v_schema, v_table
+        );
+
+        -- Create subpartitions for each tenant partition
+        FOREACH v_tenant IN ARRAY v_tarray LOOP
+            v_tab_part := format('%I_%s', v_table, v_tenant);
+            v_tab_subpart := format('%I_%s_sub', v_table, v_tenant);
+            
+            EXECUTE format(
+                'CREATE TABLE IF NOT EXISTS %I.%I 
+                 PARTITION OF %I.%I 
+                 FOR VALUES IN (%L);',
+                v_schema, v_tab_subpart, v_schema, v_tab_part, v_tenant
+            );
+        END LOOP;
+
+        -- Create the default subpartition for the main table
+        EXECUTE format(
+            'CREATE TABLE IF NOT EXISTS %I.%I_default_sub 
+             PARTITION OF %I.%I DEFAULT;',
+            v_schema, v_table, v_schema, v_table
+        );
+    END LOOP;
+END $$;
