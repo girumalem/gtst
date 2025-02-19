@@ -1,0 +1,65 @@
+DO $$ 
+DECLARE
+    v_p_init_date     date := '2024-12-01 13:59:25'::date;
+    v_p_final_date    date := '2025-01-01'::date;
+    v_p_start_date    date;
+    v_p_end_date      date;
+    v_schema          text;
+    v_table           text;
+    v_tab_part        text;
+    v_tab_subpart     text;
+    table_rec         record;
+    v_tid             text;
+    v_tenant          text;
+    v_tarray          text[] := array['1','2','24','3','4','8'];
+BEGIN
+    select date_trunc('month', v_p_init_date) into v_p_start_date;
+    
+    FOR table_rec IN
+        select schemaname, tablename from pg_tables 
+        where (schemaname = 'ohie' and tablename in ('awl_event')) 
+    LOOP
+        select v_p_init_date into v_p_start_date;
+        select table_rec.schemaname into v_schema;
+        select table_rec.tablename into v_table;
+
+        -- Create MONTHLY Partitions using RANGE
+        WHILE v_p_start_date <= v_p_final_date LOOP
+            select table_rec.tablename || '_' || to_char(v_p_start_date, 'monyyyy') into v_tab_part;
+            select (v_p_start_date + '1 month'::interval) into v_p_end_date;
+            
+            BEGIN
+                EXECUTE format(
+                    'CREATE TABLE IF NOT EXISTS %I.%I PARTITION OF %I.%I
+                        FOR VALUES FROM (%L) TO (%L)
+                        PARTITION BY LIST (tenant_id)', 
+                    v_schema, v_tab_part, v_schema, v_table, v_p_start_date, v_p_end_date);
+                
+                EXECUTE format(
+                    'ALTER TABLE %I.%I OWNER to %I', 
+                    v_schema, v_tab_part, v_schema);
+            EXCEPTION
+                WHEN others THEN
+                    RAISE NOTICE 'Partition % already exists or another error occurred.', v_tab_part;
+            END;
+
+            -- Create LIST Subpartitions for tenants
+            FOREACH v_tenant IN ARRAY v_tarray LOOP
+                select v_tab_part || '_' || v_tenant into v_tab_subpart;
+                
+                BEGIN
+                    EXECUTE format(
+                        'CREATE TABLE IF NOT EXISTS %I.%I PARTITION OF %I.%I
+                            FOR VALUES IN (%L)', 
+                        v_schema, v_tab_subpart, v_schema, v_tab_part, v_tenant);
+                EXCEPTION
+                    WHEN others THEN
+                        RAISE NOTICE 'Subpartition % already exists or another error occurred.', v_tab_subpart;
+                END;
+            END LOOP;
+
+            -- Move to next month
+            select (v_p_start_date + '1 month'::interval) into v_p_start_date;
+        END LOOP;
+    END LOOP;
+END $$;
