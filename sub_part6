@@ -1,0 +1,126 @@
+DO $$ 
+DECLARE
+    v_p_init_date     date:= '2024-12-01'::date;
+    v_p_final_date    date:= '2025-01-01'::date;
+    v_p_start_date    date;
+    v_p_end_date      date;
+    v_schema          text;
+    v_table           text;
+    v_tab_part        text;
+    v_tab_subpart     text;
+    v_default_part    text;
+    v_default_subpart text;
+    table_rec         record;
+    v_tenant          text;
+    v_tarray          text:= array['1','2','24','3','4','8'];  -- Explicit tenants
+BEGIN
+    select date_trunc('month', v_p_init_date) into v_p_start_date;
+    
+    FOR table_rec IN
+        select schemaname, tablename from pg_tables 
+        where (schemaname = 'ohie' and tablename in ('awl_event')) 
+    LOOP
+        select table_rec.schemaname into v_schema;
+        select table_rec.tablename into v_table;
+
+        -- Create MONTHLY Partitions using RANGE
+        WHILE v_p_start_date <= v_p_final_date LOOP
+            select table_rec.tablename || '_' || to_char(v_p_start_date, 'monyyyy') into v_tab_part;
+            select (v_p_start_date + '1 month'::interval) into v_p_end_date;
+            
+            BEGIN
+                EXECUTE format(
+                    'CREATE TABLE IF NOT EXISTS %I.%I PARTITION OF %I.%I
+                        FOR VALUES FROM (%L) TO (%L)
+                        PARTITION BY LIST (tenant_id)', 
+                    v_schema, v_tab_part, v_schema, v_table, v_p_start_date, v_p_end_date);
+                
+                EXECUTE format(
+                    'ALTER TABLE %I.%I OWNER to %I', 
+                    v_schema, v_tab_part, v_schema);
+            EXCEPTION
+                WHEN others THEN
+                    RAISE NOTICE 'Partition % already exists or another error occurred.', v_tab_part;
+            END;
+
+            -- Create LIST Subpartitions for tenants
+            FOREACH v_tenant IN ARRAY v_tarray LOOP
+                select v_tab_part || '_' || v_tenant into v_tab_subpart;
+                
+                BEGIN
+                    EXECUTE format(
+                        'CREATE TABLE IF NOT EXISTS %I.%I PARTITION OF %I.%I
+                            FOR VALUES IN (%L)', 
+                        v_schema, v_tab_subpart, v_schema, v_tab_part, v_tenant);
+                EXCEPTION
+                    WHEN others THEN
+                        RAISE NOTICE 'Subpartition % already exists or another error occurred.', v_tab_subpart;
+                END;
+            END LOOP;
+
+            -- Create a DEFAULT Tenant Subpartition for this Month
+            select v_tab_part || '_default' into v_default_subpart;
+            
+            BEGIN
+                EXECUTE format(
+                    'CREATE TABLE IF NOT EXISTS %I.%I PARTITION OF %I.%I
+                        DEFAULT', 
+                    v_schema, v_default_subpart, v_schema, v_tab_part);
+                RAISE NOTICE 'Created default subpartition: %', v_default_subpart;
+            EXCEPTION
+                WHEN others THEN
+                    RAISE NOTICE 'Default subpartition % already exists.', v_default_subpart;
+            END;
+
+            -- Move to next month
+            select (v_p_start_date + '1 month'::interval) into v_p_start_date;
+        END LOOP;
+
+        -- Create a DEFAULT Monthly Partition (Covers Old Data)
+        select v_table || '_default' into v_default_part;
+        
+        BEGIN
+         EXECUTE format(
+            'CREATE TABLE IF NOT EXISTS %I.%I PARTITION OF %I.%I
+        FOR VALUES FROM (MINVALUE) TO (%L)
+           PARTITION BY LIST (tenant_id)', 
+                       v_schema, v_default_part, v_schema, v_table, v_p_init_date - 1);
+
+            RAISE NOTICE 'Created default partition: %', v_default_part;
+        EXCEPTION
+            WHEN others THEN
+                RAISE NOTICE 'Default partition % already exists.', v_default_part;
+        END;
+
+        -- Create Tenant Subpartitions for the DEFAULT Monthly Partition
+        FOREACH v_tenant IN ARRAY v_tarray LOOP
+            select v_default_part || '_' || v_tenant into v_tab_subpart;
+
+            BEGIN
+                EXECUTE format(
+                    'CREATE TABLE IF NOT EXISTS %I.%I PARTITION OF %I.%I
+                        FOR VALUES IN (%L)', 
+                    v_schema, v_tab_subpart, v_schema, v_default_part, v_tenant);
+                RAISE NOTICE 'Created tenant subpartition for default partition: %', v_tab_subpart;
+            EXCEPTION
+                WHEN others THEN
+                    RAISE NOTICE 'Tenant subpartition % for default partition already exists.', v_tab_subpart;
+            END;
+        END LOOP;
+
+        -- Create a DEFAULT Tenant Subpartition for the DEFAULT Monthly Partition
+        select v_default_part || '_default' into v_default_subpart;
+
+        BEGIN
+            EXECUTE format(
+                'CREATE TABLE IF NOT EXISTS %I.%I PARTITION OF %I.%I
+                    DEFAULT', 
+                v_schema, v_default_subpart, v_schema, v_default_part);
+            RAISE NOTICE 'Created default tenant subpartition for default partition: %', v_default_subpart;
+        EXCEPTION
+            WHEN others THEN
+                RAISE NOTICE 'Default tenant subpartition % already exists.', v_default_subpart;
+        END;
+
+    END LOOP;
+END $$;
