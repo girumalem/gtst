@@ -1,0 +1,26 @@
+Joey is a highly valued member of the team and our resident SME for Oracle tuning, GoldenGate, and ACE ETL processes.  His willingness to mentor and support newer DBAs is commendable and contributes significantly to the team's growth. It has been a pleasure working with Joey, and while we will certainly miss him if his retirement plans come to fruition, we wholeheartedly support him in this exciting new chapter of his life.
+
+Key Accomplishments:
+
+Joey's contributions this year demonstrate his deep expertise and commitment to optimizing our database infrastructure. He:
+
+Provided ongoing support to the ACE Modernization and cloud migration project, advising on data handling, future reporting impacts, and mitigation strategies. His involvement will increase as the project progresses and Oracle-specific improvements to the ACE application are implemented.
+Successfully participated in Oracle RU updates and the migration of legacy Oracle systems to new hardware.
+Improved monthly/daily purge procedures, making them generic, resilient, and adaptable to new tables across all database environments.
+Updated the tablespace space procedure to anticipate growth at the block level, mitigating space allocation issues.
+Consistently collaborated with development staff to optimize queries, supporting growth and scalability.
+Challenges and Development:
+
+Joey reports no significant impediments to his work, highlighting his proactive approach to problem-solving and his ability to navigate potential roadblocks effectively. He expresses enjoyment in the challenge of improving code efficiency and time savings.  He also notes his use of new coding techniques in both his own procedures and in assisting the development staff, demonstrating his continuous learning and adaptation.
+
+Areas for Growth:
+
+Given Joey's potential retirement, the focus shifts from individual growth areas to knowledge transfer and mentorship.  It will be crucial to capture his extensive expertise in Oracle tuning, GoldenGate, and ACE ETL processes to ensure a smooth transition and minimize disruption.  This could involve documenting best practices, creating training materials, and actively mentoring junior DBAs.
+
+Future Goals:
+
+Joey looks forward to the coming year and his potential transition to retirement. He expresses his appreciation for the support he has received and his desire to remain a valuable contributor during his remaining time with the team.
+
+Overall Assessment:
+
+Joey is a highly respected and valuable member of the team. His deep technical expertise, coupled with his willingness to share his knowledge and mentor others, has made a significant positive impact.  We appreciate his contributions and wish him all the best in his future endeavors.  It is important that we prioritize capturing his institutional knowledge to ensure the continued success of the team and the systems he supports.
