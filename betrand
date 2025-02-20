@@ -1,0 +1,33 @@
+Bertrand has had a strong year, demonstrating significant growth and solidifying his position as a key member of the team, particularly as the resident PostgreSQL SME.  He has become increasingly comfortable with team dynamics and established routines, making valuable contributions to several critical projects.
+
+Key Accomplishments:
+
+Bertrand's accomplishments this year are noteworthy and demonstrate his commitment to improving our database infrastructure.  He successfully:
+
+Upgraded databases supporting the ODX, Iedi, Qlik, and PIC applications, ensuring optimal performance and compatibility.
+Completed online database migrations from Azure PostgreSQL single server to Flexible server with minimal downtime, preserving data integrity.
+Migrated ODX databases from RHEL 8 to RHEL 9, enhancing security and system reliability.
+Proactively maintained database health and performance through regular maintenance, including implementing jobs and functions for idle connection cleanup and setting up pg_bouncer for connection pooling and management.
+Provided consistent on-call support, responding effectively to urgent issues.
+Implemented and managed robust backup and recovery processes for the PIC and ODX environments.
+Played a crucial role in the ODX database consolidation project, improving efficiency and significantly reducing costs.
+Led the Secure for PIC project, automating database access requests and streamlining processes.
+Challenges and Development:
+
+Bertrand faced several challenges this year, which he navigated successfully, demonstrating resilience and a commitment to growth.  He effectively handled the demanding workload of the ODX database consolidation, learning valuable lessons in hard work, troubleshooting, and perseverance.  He also developed his communication skills while working with various teams on the Secure Project, learning to navigate dependencies and effectively follow up on open tickets. Managing regular maintenance, upgrades, migrations, and support tasks required him to stay current with evolving technologies, further enhancing his technical skills and adaptability.  His experience with on-call support, particularly during busy patching weeks, has strengthened his multitasking and prioritization abilities.
+
+Areas for Growth:
+
+While Bertrand has made significant progress, there are areas where further development will enhance his overall performance and contribution to the team.  Specifically, he needs to focus on:
+
+Inter-team and Cross-team Communication: While his communication improved during the Secure Project, Bertrand needs to consistently communicate proactively and effectively with both his immediate team and teams we support. This includes providing regular updates, actively listening to concerns, and ensuring clarity in all communications.
+Documentation: Improving the quality and completeness of his documentation is crucial. This will ensure knowledge sharing, reduce reliance on individual expertise, and facilitate smoother transitions.
+Meeting Deadlines and Attention to Detail: Consistently meeting deadlines and maintaining a high level of attention to detail are essential for project success and team efficiency.
+Proactive Problem Solving: While on-call support has improved his ability to manage urgent issues, he should also focus on proactive problem solving and reaching out for assistance when struggling with a task or concept. This will prevent issues from escalating and allow for timely support.
+Future Goals:
+
+Bertrand has set ambitious and valuable goals for the coming year.  His desire to learn automation and CI/CD tools like GitHub, Terraform, and Jenkins, as well as exploring NoSQL databases like Mongo and Cassandra, will significantly broaden his skillset and benefit the team.  His continued focus on upgrades, migrations, database automation, security enhancements, cross-functional collaboration, cost optimization, backups and recovery, cloud services, on-call support, high availability, and disaster recovery is commendable and aligns well with team priorities.
+
+Overall Assessment:
+
+Bertrand is a valuable asset to the team. His technical skills, dedication, and willingness to learn are commendable. By focusing on the areas for growth outlined above, he can further enhance his contributions and solidify his position as a high-performing member of the team.  I am confident in his ability to continue developing and achieving his goals in the coming year.
