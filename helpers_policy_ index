@@ -1,0 +1,250 @@
+helpers & policy index — explain like i’m 5 (but you code)
+supported date formats
+DATE_PATTERNS = ['%Y-%m-%d','%m/%d/%Y','%d/%m/%Y','%Y/%m/%d']
+
+
+We expect dates in different shapes (ISO YYYY-MM-DD, US MM/DD/YYYY, EU DD/MM/YYYY, and YYYY/MM/DD). This list is used to try multiple parsers in order.
+
+parse_date_maybe
+def parse_date_maybe(s: Any) -> Optional[datetime]:
+    if not s: return None
+
+
+If the input is empty/None, just return None. No drama.
+
+    s = str(s).strip()
+
+
+Normalize: convert to string and trim spaces so " 2024-01-01 " still parses.
+
+    for pat in DATE_PATTERNS:
+        try: return datetime.strptime(s, pat)
+        except Exception: pass
+
+
+Try each known date pattern. As soon as one works, return the parsed datetime. If it fails, keep trying others.
+
+    m = re.fullmatch(r'(\d{4})(\d{2})(\d{2})', s)
+
+
+If none worked, try a compact YYYYMMDD form like 20240101.
+
+    if m:
+        try: return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except Exception: return None
+
+
+If it matches, build a datetime from the captured year, month, day. If it still fails (e.g., invalid month 13), return None.
+
+    return None
+
+
+If nothing parsed, say “I couldn’t parse this.”
+
+age_from_dob
+def age_from_dob(dob: Optional[datetime], ref: Optional[datetime] = None) -> Optional[int]:
+    if not dob: return None
+
+
+If we don’t even have a DOB date, can’t compute age → None.
+
+    ref = ref or datetime.utcnow()
+
+
+Compute age relative to a reference date (claim date is best). If none provided, use “now” (UTC).
+
+    years = ref.year - dob.year - ((ref.month, ref.day) < (dob.month, dob.day))
+
+
+Classic age calc: subtract years, then adjust if the birthday hasn’t occurred yet this year.
+
+    return years if 0 <= years < 150 else None
+
+
+Sanity check: reject negative or absurd ages.
+
+sex_normalize
+def sex_normalize(s):
+    if s is None: return 'U'
+
+
+No input → unknown ('U').
+
+    s_up = str(s).strip().upper()
+    if s_up in {'M','MALE'}: return 'M'
+    if s_up in {'F','FEMALE'}: return 'F'
+    return 'U'
+
+
+Normalize common inputs to 'M', 'F', otherwise 'U'. This avoids downstream if-else spaghetti.
+
+icd_dot_normalize
+def icd_dot_normalize(code: str) -> str:
+    c = str(code).strip().upper()
+
+
+Normalize formatting (string, trim, uppercase).
+
+    if re.fullmatch(r'[A-Z]\d{3,6}', c) and '.' not in c and len(c) >= 4:
+        return c[:3] + '.' + c[3:]
+
+
+ICD-10 codes often have a dot (e.g., I20.0). If we detect a valid undotted pattern like I200, insert a dot after the 3rd char → I20.0. It improves consistency for matching against policy/refs.
+
+    return c
+
+
+Otherwise return as-is.
+
+_norm_pid
+def _norm_pid(pid: Optional[str]) -> Optional[str]:
+    if not pid: return None
+    return re.sub(r'[-_\s]', '', str(pid)).upper()
+
+
+Policy IDs may contain dashes/underscores/spaces and case differences (pol-123, Pol_123). We strip those out and uppercase so lookups are reliable: pol-123 → POL123.
+
+_extract_rules
+def _extract_rules(obj: Dict[str, Any]) -> List[Dict[str, Any]]:
+    rules = []
+    items = obj.get('covered_procedures') or []
+
+
+Each policy includes a list of “covered procedures.” If not present, default to empty.
+
+    if isinstance(items, list):
+        for it in items:
+            if not isinstance(it, dict): continue
+
+
+Be defensive: only process well-formed dict items.
+
+            proc = str(it.get('procedure_code') or it.get('procedure') or '').strip()
+            if not proc: continue
+
+
+Get the CPT/procedure code for the rule. If missing, skip—there’s no rule without a procedure.
+
+            diags = it.get('covered_diagnoses') or it.get('diagnoses') or []
+            if isinstance(diags, str):
+                diags = [d for d in re.split(r'[;,\s]+', diags) if d]
+
+
+Diagnoses can be a list or a string "I20.0, I21.4; E11.9". If string, split on ; , or whitespace into a list.
+
+            diags = [str(d).strip().upper() for d in diags]
+            diags = [(d[:3] + '.' + d[3:]) if re.fullmatch(r'[A-Z]\d{3,6}', d) and '.' not in d and len(d)>=4 else d for d in diags]
+
+
+Normalize diagnosis codes: uppercase and insert dot for undotted ICD-10-like codes (same logic as icd_dot_normalize, just inline here).
+
+            ar = it.get('age_range') or []
+            age_min = None; age_max = None
+            if isinstance(ar, list) and len(ar) >= 2:
+                try: age_min = int(ar[0])
+                except Exception: pass
+                try: age_max = int(ar[1])
+                except Exception: pass
+
+
+Optional age constraints. If present and valid, store min/max. If messy, we keep them as None (meaning no constraint).
+
+            sex_raw = str(it.get('gender') or it.get('sex') or 'Any').strip().upper()
+            sex_rule = 'ANY'
+            if sex_raw.startswith('M'): sex_rule = 'M'
+            elif sex_raw.startswith('F'): sex_rule = 'F'
+
+
+Optional sex restriction per rule ('M', 'F', or 'ANY').
+
+            preauth_required = bool(it.get('requires_preauthorization') or it.get('preauth_required') or False)
+
+
+Flag if the procedure requires preauthorization.
+
+            rules.append({
+                'procedure': proc,
+                'diagnoses': diags,
+                'age_min': age_min,
+                'age_max': age_max,
+                'sex': sex_rule,
+                'preauth_required': preauth_required
+            })
+
+
+Store a clean, compact rule the rest of the pipeline can rely on.
+
+    return rules
+
+
+Return the list of normalized rules for this policy.
+
+build_policy_index
+def build_policy_index(raw) -> Dict[str, Dict[str, Any]]:
+    index = {}
+
+
+We’ll normalize any input shape (list/dict) into a dictionary keyed by policy_id. This gives O(1) lookups by ID.
+
+    if isinstance(raw, dict) and 'policies' in raw and isinstance(raw['policies'], list):
+        src_list = raw['policies']
+
+
+Case 1: wrapped like {"policies": [ ... ]}.
+
+    elif isinstance(raw, dict):
+        src_list = []
+        for k, v in raw.items():
+            if isinstance(v, dict):
+                v = dict(v)
+                v.setdefault('policy_id', v.get('policyId') or v.get('id') or k)
+                src_list.append(v)
+
+
+Case 2: dict-of-dicts: { "POL123": {...}, "POL456": {...} }. We convert it into a list, making sure each item has a policy_id. If it didn’t, we synthesize it from the key name.
+
+    elif isinstance(raw, list):
+        src_list = raw
+    else:
+        src_list = []
+
+
+Case 3: already a list, or unknown shape → empty list.
+
+    for obj in src_list:
+        if not isinstance(obj, dict): continue
+        pid = _norm_pid(obj.get('policy_id') or obj.get('policyId') or obj.get('id') or obj.get('code') or obj.get('policy_code'))
+        if not pid: continue
+
+
+For each policy object, we try multiple common fields to find the ID, normalize it (_norm_pid), and skip if unusable.
+
+        index[pid] = {
+            'policy_id': pid,
+            'plan_name': obj.get('plan_name') or obj.get('title') or '',
+            'rules': _extract_rules(obj)
+        }
+
+
+Insert into the index keyed by normalized ID. We keep a human-friendly name if present, and parse its rules via _extract_rules.
+
+    return index
+
+
+Hand back our fast lookup table.
+
+build the global policy index once
+POLICY_INDEX = build_policy_index(policies_raw)
+
+
+We run the normalization one time at import/startup so later lookups are instant: POLICY_INDEX['POL123'] → { ... rules ... }.
+
+tl;dr (why this design)
+
+Robust parsing: real-world data is messy. We accept multiple date/sex/code formats and normalize early so the rest of the code can be simple.
+
+Guardrails: lots of None checks and sane defaults to avoid crashing on a single bad record.
+
+Fast lookups: policies are pre-indexed by a normalized ID, making it trivial/fast to find the right policy during claim checks.
+
+Minimal state: functions are pure; they transform inputs to clean outputs, which helps with testing and debugging.
