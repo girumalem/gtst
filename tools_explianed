@@ -1,0 +1,262 @@
+what are “tools” here?
+
+In LangChain, a tool is just a regular Python function that we “expose” to the LLM so it can call it. The @tool decorator tells the framework “this function is safe to call; here’s its signature and docstring so the model knows how to use it.”
+
+We define three tools:
+
+summarize_patient_record — normalize one raw claim record into clean fields
+
+summarize_policy_guideline — fetch the policy’s rules by policy_id
+
+check_claim_coverage — decide APPROVE vs ROUTE FOR REVIEW by comparing (1) to (2)
+
+There’s also a private helper _rule_covers used by tool #3.
+
+1) summarize_patient_record(record_str)
+@tool
+def summarize_patient_record(record_str: str) -> Dict[str, Any]:
+    """Summarize a raw patient claim record JSON string.
+    ...
+    """
+
+
+@tool exposes this function to the agent.
+
+The docstring is important — LangChain uses it as the tool’s description.
+
+Input is a JSON string; output is a Python dict with normalized fields.
+
+    try:
+        rec = json.loads(record_str)
+    except Exception:
+        return {'error': 'invalid JSON'}
+
+
+Convert the incoming JSON text into a Python dict (rec).
+
+If it’s malformed, return a small error dict. (The agent can decide to route for review.)
+
+    age = rec.get('age')
+    if age is None:
+        dob = rec.get('date_of_birth') or rec.get('dob')
+        svc = rec.get('date_of_service') or rec.get('service_date') or rec.get('claim_date')
+        if dob:
+            age = age_from_dob(parse_date_maybe(dob), parse_date_maybe(svc))
+
+
+If the record already has an age, great, use it.
+
+If not, we try to compute age from date_of_birth and (optionally) a service date.
+
+parse_date_maybe is a tolerant parser; age_from_dob returns an int or None.
+
+    sex = sex_normalize(rec.get('gender') or rec.get('sex'))
+
+
+Normalize gender to 'M', 'F', or 'U' (unknown). Different records use different keys (gender vs sex).
+
+    dx  = rec.get('diagnosis_codes') or rec.get('diagnoses') or []
+    dx  = [icd_dot_normalize(d) for d in dx]
+    if ICD_TO_NAME:
+        dx = [d for d in dx if d in ICD_TO_NAME]
+
+
+Gather diagnosis codes from either key, defaulting to empty list.
+
+Normalize ICD codes (add dot if missing, uppercase, etc).
+
+If we have a reference dictionary of valid codes (ICD_TO_NAME), filter out unknowns.
+
+    cpt = rec.get('procedure_codes') or rec.get('procedures') or []
+    cpt = [str(x) for x in cpt]
+    if CPT_TO_NAME:
+        keep = [c for c in cpt if c in CPT_TO_NAME]
+        cpt = keep if keep else [c for c in cpt if re.fullmatch(r'\d{5}', c)]
+
+
+Same idea for procedure (CPT) codes: standardize to strings; prefer known codes from references.
+
+If no match in refs, accept anything that looks like a 5-digit CPT as a fallback.
+
+    preauth = rec.get('preauthorization_obtained') or rec.get('preauth_provided') or rec.get('authorization_provided')
+    preauth = bool(preauth)
+
+
+Collapse multiple possible flags into a single boolean: was preauthorization provided?
+
+    return {
+        'patient_id': rec.get('patient_id') or rec.get('id'),
+        'policy_id': _norm_pid(rec.get('insurance_policy_id') or rec.get('policy_id') or rec.get('plan_id')),
+        'age': age,
+        'sex': sex,
+        'diagnoses': dx,
+        'procedures': cpt,
+        'preauth': preauth
+    }
+
+
+Return a clean, normalized summary dict with consistent keys.
+
+Note the policy_id is normalized via _norm_pid (strip dashes/spaces, uppercase). This avoids lookup bugs.
+
+Why this tool exists: it shields the rest of the system from messy, inconsistent input formats by giving us one consistent shape to work with.
+
+2) summarize_policy_guideline(policy_id)
+@tool
+def summarize_policy_guideline(policy_id: str) -> Dict[str, Any]:
+    """Return normalized policy rules for the given policy_id."""
+
+
+Exposed as a tool. Input is a string policy_id. Output is a dict with policy_id and a list of rules.
+
+    pid = _norm_pid(policy_id)
+    pol = POLICY_INDEX.get(pid)
+    if not pol:
+        return {'error': f'Unknown policy_id {policy_id}'}
+
+
+Normalize the ID to our canonical format.
+
+POLICY_INDEX is a dictionary we built at startup for O(1) lookups.
+
+If not found, we return an error dict so the agent can route for review.
+
+    return {'policy_id': pid, 'rules': pol.get('rules', [])}
+
+
+Return exactly what the checker needs: the normalized policy_id and the policy’s rules (already normalized by our helper).
+
+Why this tool exists: it gives the agent fast, structured access to the relevant benefit rules for the member’s plan.
+
+private helper: _rule_covers(record, rule)
+def _rule_covers(record: Dict[str, Any], rule: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+
+
+Not a tool — just an internal function called by the checker.
+
+It answers: “Does this one policy rule cover this record?”
+
+Returns (True, None) if covered; otherwise (False, "why not").
+
+    cpts = set(record.get('procedures', []))
+    dxs  = set(record.get('diagnoses', []))
+    age  = record.get('age')
+    sex  = (record.get('sex') or 'U').upper()
+    pre  = bool(record.get('preauth', False))
+
+
+Turn lists into sets for efficient membership tests.
+
+Pull age/sex/preauth flags.
+
+    if rule['procedure'] not in cpts:
+        return False, None
+
+
+If the rule’s CPT isn’t even in the claim’s CPT list, this rule can’t apply.
+
+We return (False, None) here because it’s not a failure reason — it’s just “wrong rule”.
+
+    rdx = set(rule.get('diagnoses', []))
+    if rdx and not (dxs & rdx):
+        return False, f"Diagnosis mismatch for CPT {rule['procedure']}."
+
+
+If the rule requires certain diagnoses, the record must include at least one of them (set intersection).
+
+    if age is not None:
+        if rule.get('age_min') is not None and age < rule['age_min']:
+            return False, f"Patient age {age} below covered minimum for CPT {rule['procedure']}."
+        if rule.get('age_max') is not None and age > rule['age_max']:
+            return False, f"Patient age {age} exceeds covered maximum for CPT {rule['procedure']}."
+
+
+Enforce min/max age if present.
+
+    if rule.get('sex') in {'M','F'} and sex != rule['sex']:
+        return False, f"Sex restriction {rule['sex']} for CPT {rule['procedure']}."
+
+
+Enforce sex restriction if the rule specifies one.
+
+    if rule.get('preauth_required') and not pre:
+        return False, f"Preauthorization required for CPT {rule['procedure']} but not provided."
+
+
+If the rule requires preauth, it must be present on the record.
+
+    return True, None
+
+
+All checks passed → this rule covers the record.
+
+3) check_claim_coverage(record_summary, policy_summary)
+@tool
+def check_claim_coverage(record_summary: Dict[str, Any], policy_summary: Dict[str, Any]) -> Dict[str, str]:
+    """Determine APPROVE vs ROUTE FOR REVIEW for a claim based on policy rules."""
+
+
+Exposed as a tool. It’s the final decision-maker.
+
+It takes the outputs of tools #1 and #2.
+
+    if policy_summary.get('error'):
+        return {'decision':'ROUTE FOR REVIEW','reason':'Unknown policy_id.'}
+
+
+If we couldn’t even find the policy, we can’t safely approve.
+
+    rules = policy_summary.get('rules', [])
+    if not rules:
+        return {'decision':'ROUTE FOR REVIEW','reason':'Policy does not define covered procedures.'}
+
+
+If the policy defines no rules, that’s ambiguous → route for review.
+
+    for cpt in record_summary.get('procedures', []):
+        cand = [r for r in rules if r.get('procedure') == cpt]
+        if not cand:
+            return {'decision':'ROUTE FOR REVIEW','reason': f'The claim for CPT code {cpt} is not covered by the policy.'}
+
+
+For each CPT billed in the claim, find all policy rules that mention that CPT.
+
+If none mention it, the CPT isn’t covered → route for review (with a specific reason).
+
+        ok_any = False; first_reason = None
+        for r in cand:
+            ok, why = _rule_covers(record_summary, r)
+            if ok:
+                ok_any = True; break
+            if first_reason is None: first_reason = why
+
+
+Try each candidate rule until one covers.
+
+If none cover, keep the first meaningful failure reason so we can give helpful feedback.
+
+        if not ok_any:
+            return {'decision':'ROUTE FOR REVIEW','reason': first_reason or f'The claim for CPT code {cpt} does not meet policy requirements.'}
+
+
+If no rule covered that CPT, route for review with the best reason we captured.
+
+    cpts = record_summary.get('procedures', [])
+    detail = f'The claim for CPT code {cpts[0]} is approved.' if cpts else 'Meets policy criteria.'
+    return {'decision':'APPROVE','reason': detail}
+
+
+If we got here, every billed CPT is covered by at least one rule → approve.
+
+Keep the reason short (your grader wants a concise rationale).
+
+Why this tool exists: it’s the deterministic gate that turns normalized data + policy rules into a crisp decision with a human-readable reason.
+
+how they’re used together
+
+The agent prompt forces the sequence:
+summarize_patient_record → summarize_policy_guideline → check_claim_coverage → STOP.
+
+Returning small, structured dicts between tools keeps the agent’s job simple and reduces token usage.
+
+Each tool is independently testable: you can call them directly with sample inputs and verify outputs.
