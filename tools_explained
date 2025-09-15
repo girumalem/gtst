@@ -1,0 +1,139 @@
+1. List of tools
+TOOLS = [summarize_patient_record, summarize_policy_guideline, check_claim_coverage]
+
+
+This is the toolbox we give to the agent.
+
+It can only use these three tools, nothing else.
+
+Each one solves a very specific piece of the problem.
+
+2. The agent’s “system prompt”
+AGENT_SYS_TEXT = (
+    "You are an insurance claims agent.\n"
+    "You MUST always call tools in this order for each record:\n"
+    "  1) summarize_patient_record -> on the raw JSON string of the record\n"
+    "  2) summarize_policy_guideline -> with the policy_id from step 1\n"
+    "  3) check_claim_coverage -> with outputs of steps 1 & 2\n"
+    "When you have enough information, output the FINAL answer in exactly this format:\n"
+    "- Decision: APPROVE | ROUTE FOR REVIEW\n"
+    "- Reason: \n"
+    "Rules:\n"
+    "- Do not invent policy data. If policy_id is missing/unknown, route for review.\n"
+    "- Keep the reason short and specific (e.g., CPT not covered / diagnosis mismatch / age out of range / preauth missing).\n"
+)
+
+
+Think of this as the instruction manual for the agent.
+
+It tells the LLM “pretend you’re a claims agent” and strictly enforces the order of steps.
+
+We also force the output format:
+
+- Decision: APPROVE | ROUTE FOR REVIEW
+- Reason: <short reason>
+
+
+This prevents the model from rambling or giving inconsistent answers.
+
+3. Creating the agent
+try:
+    agent = create_react_agent(chat_client, TOOLS)
+except NameError:
+    raise RuntimeError("Expected an existing `chat_client` instance. Define it before running this cell.")
+
+
+create_react_agent is a helper from LangGraph/LangChain that builds an agent around our tools.
+
+We give it our chat_client (your OpenAI client wrapper) and the toolbox.
+
+If chat_client doesn’t exist, we raise an error so the user knows what went wrong.
+
+4. Running the agent on records
+def run_agent_on_records(agent, records):
+    results = []
+    for rec in records:
+        rec_str = json.dumps(rec, ensure_ascii=False)
+        messages = [
+            SystemMessage(content=AGENT_SYS_TEXT),
+            HumanMessage(content=f"Process this record:\n{rec_str}")
+        ]
+
+
+For each claim record, we convert it to a JSON string.
+
+Then we prepare the conversation:
+
+A SystemMessage with the strict instructions (the agent’s “job description”).
+
+A HumanMessage with the actual claim record.
+
+        out = agent.invoke({"messages": messages})
+
+
+This is where we call the agent.
+
+The agent will “think”, call the tools in the correct order, and produce a response.
+
+        final = (
+            out["messages"][-1].content
+            if isinstance(out, dict) and "messages" in out
+            else getattr(out, "content", str(out))
+        )
+
+
+The output can be structured differently depending on version.
+
+This little block just extracts the final message content no matter how it comes back.
+
+        results.append({
+            "patient_id": rec.get("patient_id") or rec.get("id"),
+            "generated_response": final
+        })
+
+
+We save the result: the patient’s ID and the agent’s decision.
+
+Append it to a list so we can later write all of them to a file.
+
+5. Running the whole test set
+test_records = _safe_load(TEST_PATH, [])
+os.makedirs(os.path.dirname(SUBMISSION_PATH), exist_ok=True)
+
+
+Load our test dataset (test_records.json).
+
+Ensure the output folder exists.
+
+if test_records:
+    test_results = run_agent_on_records(agent, test_records)
+    with open(SUBMISSION_PATH, 'w', newline='', encoding='utf-8') as f:
+        w = csv.DictWriter(f, fieldnames=['patient_id','generated_response'])
+        w.writeheader(); w.writerows(test_results)
+
+
+If there are records, run them through the agent and write them to submission.csv.
+
+CSV has two columns: patient ID and the generated decision/reason.
+
+else:
+    with open(SUBMISSION_PATH, 'w', newline='', encoding='utf-8') as f:
+        w = csv.DictWriter(f, fieldnames=['patient_id','generated_response'])
+        w.writeheader()
+
+
+If no test records exist, we still create an empty CSV with just the header row.
+
+That way downstream processes don’t crash because the file is missing.
+
+💡 how i’d summarize for a junior dev
+
+Tools = little Lego blocks (functions) that do specific tasks.
+
+Agent = the brain that knows which Lego blocks to use and in what order, guided by our rules.
+
+System prompt = the bossy instructions that keep the agent from wandering off.
+
+run_agent_on_records = loops over input claims, lets the agent process them, and collects results.
+
+Final step = saves everything neatly into a CSV.
